@@ -1,0 +1,90 @@
+美年医疗AI:
+
+0505:
+	血清甘油三脂相关特征：
+		0403：区分心界扩大      								影响不大
+		0441：是否有手术史      甲状腺/卵巢子宫/心脏/开颅术   	影响不大
+		0131：区分未见明显异常的体检结果						影响不大
+		0912：查找甲状腺异常的病症								
+		0978/0954：	是否甲状腺病史								0978影响不大
+		1316：区分眼镜疾病										影响不大，似乎没作用
+		1402：是否动脉病症异常	
+	
+	--肝相关： 0102 0113 0114 0130 0131 0409 0434 A201 A202 A705
+	--冠心病相关：0409 0434
+	--甲状腺相关：0101 0102 0409 0434 0912 0954 0978
+	--动脉硬化相关：0102 1308 1316 1330 1402 4001 A201 A202
+	--脂肪肝相关： 0102 0409 0434 A201 A202 A705
+	--吸烟相关： 无
+	--喝酒相关：无
+	--糖尿病相关：0409 0434
+	
+Code：
+def heartModify(x):
+    x = str(x)
+    if '心界扩大' in x:
+        return 1
+    return 0
+
+def hasOperate(x):
+    x = str(x)
+    if '开颅术' in x:
+        return 1
+    elif '子宫' in x or '卵巢' in x:
+        return 2
+    elif '甲状腺' in x:
+        return 3
+    elif '心脏' in x:
+        return 4
+    return 0
+    
+def processGanyouRelateFea(data):
+    train = data.copy()
+    train['0403'] = train['0403'].apply(heartModify)
+    train['0441'] = train['0441'].apply(hasOperate)
+    train['0131'] = train['0131'].apply(lambda x: 1 if '未见明显异常' not in str(x) else 0)
+    
+    normal_label = ['exit','未见明显异常','不肿大','无','nan','未查','未见异','未触及','弃检','弃查','未见明显异常,建议b超检查','眼底弃查']
+    train['0912'] = train['0912'].apply(lambda x: 1 if  str(x) not in normal_label and '未见异常' not in str(x) else 0)
+    train['0978_jiazhuangxian'] = train['0978'].apply(lambda x: 1 if  '甲状腺' in str(x) else 0)
+    train['0954_jiazhuangxian'] = train['0954'].apply(lambda x: 1 if  '甲状腺' in str(x) else 0)
+    train['1316'] = train['1316'].apply(lambda x: 1 if  '正常' not in str(x) and '未见异常' not in str(x) and str(x) not in normal_label else 0)
+    train['1402'] = train['1402'].apply(lambda x: 1 if  '未见明显异常' not in str(x) and '正常' in str(x) and '未见异常' not in str(x) else 0)
+    
+    train = train.drop(['0978','0954'], axis=1)
+    return train		
+	
+	
+	
+	数字型： 满足 (含数字数+含空值数) > 总数*0.9 and 含数字数 > 总数*0.08 的字段进行处理  165列
+	枚举型： unique 满足  10 - 30 区间内的某些特定字段 									  16列
+	
+Code:
+	# 枚举类型在10-30之间的字段
+	emu_columns = []
+	exist_emu_cols = digit_cols2 + emu_cols + wenben_cols + ['0125','0440','0973','0981','1304','3207','3399','3402','30007']
+	for c in train.columns:
+		types = len(train[c].unique())
+		if types<30 and types >10 and c not in exist_emu_cols:
+			emu_columns.append(c)
+
+	print (len(emu_columns))
+	
+	def processEmuWenFeature(data):
+    train = data.copy()
+    emu_good_labels = ['nan', '未见异常','无异常','正常','未闻及异常','有力',
+                   '弃查','未触及','未 触及','未及','不大','exit','未见明显异常',
+                  '视不见','未查','无压痛','无','未见异','纹理清晰']
+    for c in emu_columns:
+        train[c] = train[c].apply(lambda x: 0 if '无' in str(x) or '未' in str(x) or str(x) in emu_good_labels else 1)
+        
+    return train
+	
+	
+	不同的指标用不同的字段，效果有微升
+		收缩压	不加['3193','1840','A701','A703', '0424']
+		舒张压
+		血清甘油三酯	['3193','1840','A701','A703', '0424'] + emu_columns
+		血清高密度脂蛋白	不加 emu_cols = ['3190', '3191', '3192', '3195', '3196','3197','3430','3189','3194','3485','3486','360']
+		血清低密度脂蛋白	不加 emu_cols +['3193','1840','A701','A703', '0424']
+	
